@@ -3,14 +3,14 @@ export image_ns := env("IMAGE_NS", "annie444")
 export default_tag := env("DEFAULT_TAG", "latest")
 export ib_image := env("IB_IMAGE", "ghcr.io/osbuild/image-builder-cli:latest")
 export podman_connection := env("PODMAN_CONNECTION", "")
-export fedora_version := env("FEDORA_VERSION", "43")
+export fedora_version := env("FEDORA_VERSION", "44")
 export output_dir := justfile_directory() + "/output"
 export tools_image := env("TOOLS_IMAGE", "localhost/homelab-tools:latest")
 export target_arch_raw := env("TARGET_ARCH", arch())
 git_tag_version := `git tag -l | sed -E 's/^[^0-9]*//g' | sort --version-sort | tail -n 1`
 export container_version := if git_tag_version != "" { git_tag_version } else { "0.1.0-0" }
-export container_authors := "Annie Ehler <annie.ehler.4@gmail.com>"
-export container_source := "https://github.com/annie444/homelab_bootc"
+export container_authors := 'Analetta "Annie" Ehler <annie.ehler.4@gmail.com>'
+export container_source := "https://github.com/annie444/homelab_bootc_basic"
 export container_revision := `git rev-parse --short HEAD`
 export container_created := `date --rfc-3339="seconds"`
 open_cmd := if os() == "windows" { "start" } else if os() == "darwin" { "open" } else { "xdg-open" }

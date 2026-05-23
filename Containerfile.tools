@@ -6,7 +6,7 @@
 # Build with: just build-tools
 # Use via:    just _tool <cmd> [args...]
 
-FROM registry.fedoraproject.org/fedora:43
+FROM registry.fedoraproject.org/fedora:44
 
 # ── System packages ────────────────────────────────────────────────────────
 RUN dnf install -y \

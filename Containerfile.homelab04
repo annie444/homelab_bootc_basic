@@ -1,17 +1,19 @@
-ARG FEDORA_VERSION=43
+ARG FEDORA_VERSION=44
 
 FROM quay.io/fedora/fedora-bootc:$FEDORA_VERSION
 
-ARG FEDORA_VERSION=43
+ARG FEDORA_VERSION=44
 
 # Install necessary tools for the build process
 COPY build/dnf/rpm-fusion.sh /tmp/rpm-fusion.sh
 COPY build/install-packages.sh /tmp/install-packages.sh
 COPY build/base-pkgs.txt /tmp/base-pkgs.txt
+COPY build/fangfrisch.sh /tmp/fangfrisch.sh
 
 # Install RPM Fusion repositories, NVIDIA Container Toolkit, and necessary packages for the image.
 RUN /tmp/rpm-fusion.sh && \
     /tmp/install-packages.sh && \
+    /tmp/fangfrisch.sh && \
     dnf5 clean all && \
     rm -rf /var/cache/dnf/* && \
     rm -rf /var/cache/libdnf5/* && \
@@ -27,27 +29,15 @@ COPY root/usr/lib/ostree/prepare-root.conf /usr/lib/ostree/prepare-root.conf
 COPY root/usr/lib/kernel/install.conf /usr/lib/kernel/install.conf
 COPY root/usr/lib/kernel/cmdline /usr/lib/kernel/cmdline
 
-# Systemd/boot policy helpers.
-COPY root/usr/lib/systemd/system/bootc-uki-generate.service /usr/lib/systemd/system/bootc-uki-generate.service
-COPY root/usr/lib/systemd/system/bootc-uki-generate.path /usr/lib/systemd/system/bootc-uki-generate.path
-COPY root/usr/lib/systemd/system/bootc-bootloader-update.service /usr/lib/systemd/system/bootc-bootloader-update.service
-COPY root/usr/lib/systemd/system/bootc-extension-refresh.service /usr/lib/systemd/system/bootc-extension-refresh.service
-COPY root/usr/lib/systemd/system/bootc-extension-refresh.path /usr/lib/systemd/system/bootc-extension-refresh.path
+# Shell customizations
+COPY root/etc/profile.d/usr-local.sh /etc/profile.d/usr-local.sh
 
-# Sysupdate channel for extensions only (disabled by default).
-COPY root/usr/lib/sysupdate.d/90-extensions.conf /usr/lib/sysupdate.d/90-extensions.conf
-
-# Minimal documentation to make the shipped policy discoverable on a running host.
-COPY root/usr/share/doc/fedora43-bootc-secure/README.md /usr/share/doc/fedora43-bootc-secure/README.md
-
-# tmpfiles.d configuration to ensure the necessary directories and permissions are set up.
-COPY root/usr/lib/tmpfiles.d/app-info-cache.conf /usr/lib/tmpfiles.d/app-info-cache.conf
-COPY root/usr/lib/tmpfiles.d/dnf-cache.conf /usr/lib/tmpfiles.d/dnf-cache.conf
-COPY root/usr/lib/tmpfiles.d/libX11-cache.conf /usr/lib/tmpfiles.d/libX11-cache.conf
-COPY root/usr/lib/tmpfiles.d/package-kit-cache.conf /usr/lib/tmpfiles.d/package-kit-cache.conf
-COPY root/usr/lib/tmpfiles.d/realmd-cache.conf /usr/lib/tmpfiles.d/realmd-cache.conf
-COPY root/usr/lib/tmpfiles.d/swcatalog-cache.conf /usr/lib/tmpfiles.d/swcatalog-cache.conf
-COPY root/usr/lib/tmpfiles.d/var-account.conf /usr/lib/tmpfiles.d/var-account.conf
+# ClamAV configuration
+COPY root/etc/clamd.d/scan.conf /etc/clamd.d/scan.conf
+COPY root/etc/freshclam.conf /etc/freshclam.conf
+COPY root/etc/fangfrisch.conf /etc/fangfrisch.conf
+COPY root/usr/libexec/fangfrisch.sh /usr/libexec/fangfrisch.sh
+COPY root/usr/libexec/fangfrisch-has-news.sh /usr/libexec/fangfrisch-has-news.sh
 
 # Enable and start the necessary services
 COPY build/services.sh /tmp/services.sh

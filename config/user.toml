@@ -8,7 +8,7 @@ password = "$6$vA1r8t0lbZTB9R4b$Z3Zx.TdIv32dFQdVjyZ/P/..Mmh9x3oCTZqKD/q2fvRBP.qn
 key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMTijhGkE4C7yFWj0/md4R8EwLaYsyHKLTIOzJM65QHv"
 home = "/var/home/annie"
 shell = "/usr/bin/bash"
-groups = ["users", "wheel"]
+groups = ["users", "wheel", "virusgroup"]
 uid = 1001
 gid = 1001
 
@@ -20,9 +20,7 @@ enable = [
   "org.fedoraproject.Anaconda.Modules.Security",
   "org.fedoraproject.Anaconda.Modules.Services",
   "org.fedoraproject.Anaconda.Modules.Users",
-  "org.fedoraproject.Anaconda.Modules.Timezone"
+  "org.fedoraproject.Anaconda.Modules.Timezone",
 ]
 
-disable = [
-  "org.fedoraproject.Anaconda.Modules.Subscription",
-]
+disable = ["org.fedoraproject.Anaconda.Modules.Subscription"]

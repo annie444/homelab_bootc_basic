@@ -57,8 +57,10 @@ parted
 pass
 pinentry
 pinentry-tty
+pipx
 podlet
 podman-compose
+postfix
 python3-cryptography
 python3-dnspython
 restic
