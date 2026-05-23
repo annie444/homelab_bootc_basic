@@ -5,3 +5,4 @@ pip install --upgrade pip
 pip install fangfrisch
 ln -s /usr/local/share/fangfrisch-venv/bin/fangfrisch /usr/local/bin/fangfrisch
 deactivate
+setsebool -P antivirus_can_scan_system 1

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # vim: ts=4 sw=4 noet ft=sh
 #
 # Example script to process Fangfrisch News.
@@ -17,7 +17,7 @@ declare -r SUBJECT="Fangfrisch News are available"
 
 # Option 2: sendmail
 declare -r MAILAPP="sendmail"
-declare -r MAILAPP_OPT=( "-t" )
+declare -r MAILAPP_OPT=("-t")
 export PATH="$PATH:/usr/sbin"
 
 # Option 3: swaks

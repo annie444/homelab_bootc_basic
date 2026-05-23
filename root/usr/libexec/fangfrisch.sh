@@ -1,4 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/bash
+
+set -Eeuxo pipefail
 
 if ! [ -d /var/lib/fangfrisch ]; then
   mkdir -m 0770 -p /var/lib/fangfrisch

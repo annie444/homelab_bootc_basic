@@ -4,15 +4,20 @@ FROM quay.io/fedora/fedora-bootc:$FEDORA_VERSION
 
 ARG FEDORA_VERSION=44
 
+# Enable FIPS
+COPY root/usr/lib/bootc/kargs.d/01-fips.toml /usr/lib/bootc/kargs.d/01-fips.toml
+
 # Install necessary tools for the build process
 COPY build/dnf/rpm-fusion.sh /tmp/rpm-fusion.sh
 COPY build/dnf/nvidia.sh /tmp/nvidia.sh
 COPY build/install-packages.sh /tmp/install-packages.sh
 COPY build/base-pkgs.txt /tmp/base-pkgs.txt
 COPY build/fangfrisch.sh /tmp/fangfrisch.sh
+COPY build/fips.sh /tmp/fips.sh
 
 # Install RPM Fusion repositories, NVIDIA Container Toolkit, and necessary packages for the image.
-RUN /tmp/rpm-fusion.sh && \
+RUN /tmp/fips.sh && \
+    /tmp/rpm-fusion.sh && \
     /tmp/nvidia.sh && \
     /tmp/install-packages.sh && \
     /tmp/fangfrisch.sh && \
@@ -26,10 +31,8 @@ RUN /tmp/rpm-fusion.sh && \
 # Enable composefs+verity for the immutable image and make /etc transient by default.
 COPY root/usr/lib/ostree/prepare-root.conf /usr/lib/ostree/prepare-root.conf
 
-# Force kernel-install into UKI mode; the actual UKIs are generated during
-# install/finalization when an ESP/XBOOTLDR is available.
-COPY root/usr/lib/kernel/install.conf /usr/lib/kernel/install.conf
-COPY root/usr/lib/kernel/cmdline /usr/lib/kernel/cmdline
+# Configure Bootc
+COPY root/usr/lib/bootc/kargs.d/02-general.toml /usr/lib/bootc/kargs.d/02-general.toml
 
 # Shell customizations
 COPY root/etc/profile.d/usr-local.sh /etc/profile.d/usr-local.sh
@@ -40,6 +43,13 @@ COPY root/etc/freshclam.conf /etc/freshclam.conf
 COPY root/etc/fangfrisch.conf /etc/fangfrisch.conf
 COPY root/usr/libexec/fangfrisch.sh /usr/libexec/fangfrisch.sh
 COPY root/usr/libexec/fangfrisch-has-news.sh /usr/libexec/fangfrisch-has-news.sh
+
+# Rootkit configutation
+COPY root/etc/rkhunter.conf /etc/rkhunter.conf
+COPY root/usr/lib/tmpfiles.d/rkhunter.conf /usr/lib/tmpfiles.d/rkhunter.conf
+COPY root/usr/libexec/rkhunter.sh /usr/libexec/rkhunter.sh
+COPY root/usr/lib/systemd/system/rkhunter.timer /usr/lib/systemd/system/rkhunter.timer
+COPY root/usr/lib/systemd/system/rkhunter.service /usr/lib/systemd/system/rkhunter.service
 
 # Enable and start the necessary services
 COPY build/services.sh /tmp/services.sh

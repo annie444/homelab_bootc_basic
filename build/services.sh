@@ -8,3 +8,4 @@ systemctl enable clamav-freshclam.service
 systemctl enable clamd@scan.service
 systemctl enable sshd.service
 systemctl enable postfix.service
+systemctl enable rkhunter.timer

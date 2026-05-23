@@ -1,0 +1,9 @@
+[Unit]
+Description=rkhunter rootkit check
+Documentation=man:rkhunter(8)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/rkhunter.sh
+Nice=10
+IOSchedulingClass=idle
