@@ -1,0 +1,48 @@
+# Build tooling container for homelab_bootc Justfile recipes.
+# This image is used exclusively for running dev/build tools (shellcheck,
+# shfmt, oras, systemd-repart, erofs-utils, etc.) so that the Justfile
+# works identically on macOS and Linux without native tool installation.
+#
+# Build with: just build-tools
+# Use via:    just _tool <cmd> [args...]
+
+FROM registry.fedoraproject.org/fedora:43
+
+# ── System packages ────────────────────────────────────────────────────────
+RUN dnf install -y \
+    # Shell tooling
+    ShellCheck \
+    shfmt \
+    # OCI / container utilities
+    skopeo \
+    # Archive / filesystem tools
+    rsync \
+    cpio \
+    gzip \
+    xz \
+    # systemd repart + DDI tooling
+    systemd \
+    systemd-repart \
+    erofs-utils \
+    # Crypto / signing
+    openssl \
+    sbsigntools \
+    binutils \
+    # General utilities
+    jq \
+    curl \
+    findutils \
+    util-linux \
+    && dnf clean all
+
+# ── ORAS CLI ───────────────────────────────────────────────────────────────
+# Pull oras binary from GitHub releases; keeps the image self-contained and
+# version-pinned independent of the Fedora package (which lags behind).
+ARG ORAS_VERSION=1.2.3
+ARG TARGETARCH=amd64
+RUN curl -fsSL \
+    "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    | tar -xz -C /usr/local/bin oras \
+    && chmod 0755 /usr/local/bin/oras
+
+WORKDIR /work

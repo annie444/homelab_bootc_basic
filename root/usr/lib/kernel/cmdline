@@ -1,0 +1,1 @@
+quiet rw systemd.gpt_auto=1 rd.luks=1
