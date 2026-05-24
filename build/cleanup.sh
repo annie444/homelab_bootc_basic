@@ -7,6 +7,8 @@ rm -rf /run/cockpit
 rm -rf /run/dnf
 rm -rf /run/selinux-policy
 rm -rf /run/setroubleshoot
+rm -rf /run/certmonger
+rm -rf /run/unbound
 rm -rf /var/account
 rm -rf /var/cache
 rm -rf /var/lib/PackageKit
@@ -29,6 +31,9 @@ rm -rf /var/lib/rkhunter
 rm -rf /var/lib/postfix
 rm -rf /var/lib/systemd
 rm -rf /var/lib/fail2ban
+rm -rf /var/lib/certmonger
+rm -rf /var/lib/ipa-client
+rm -rf /var/lib/samba/winbindd_privileged
 rm -rf /var/roothome/.cache
 rm -rf /var/log/*
 rm -rf /var/spool/*

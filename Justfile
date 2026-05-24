@@ -515,6 +515,7 @@ _build-installer-ib $payload_image $tag $config $registry=image_registry $ns=ima
     args+=("bootc-installer")
     args+=("--arch=${target_arch_raw}")
     args+=("--blueprint=/config.toml")
+    args+=("--bootc-default-fs=xfs")
     args+=("--bootc-ref=${registry}/${ns}/${installer_image}:${tag}")
     args+=("--bootc-installer-payload-ref=${registry}/${ns}/${payload_image}:${tag}")
     args+=("--with-buildlog")
