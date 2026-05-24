@@ -4,20 +4,20 @@ FROM quay.io/fedora/fedora-bootc:$FEDORA_VERSION
 
 ARG FEDORA_VERSION=44
 
-# Enable FIPS
-COPY root/usr/lib/bootc/kargs.d/01-fips.toml /usr/lib/bootc/kargs.d/01-fips.toml
+# DNF5 configuration
+COPY root/etc/dnf/dnf.conf /etc/dnf/dnf.conf
 
 # Install necessary tools for the build process
 COPY build/dnf/rpm-fusion.sh /tmp/rpm-fusion.sh
 COPY build/dnf/nvidia.sh /tmp/nvidia.sh
+COPY build/dnf/terra.sh /tmp/terra.sh
 COPY build/install-packages.sh /tmp/install-packages.sh
 COPY build/base-pkgs.txt /tmp/base-pkgs.txt
 COPY build/fangfrisch.sh /tmp/fangfrisch.sh
-COPY build/fips.sh /tmp/fips.sh
 
 # Install RPM Fusion repositories, NVIDIA Container Toolkit, and necessary packages for the image.
-RUN /tmp/fips.sh && \
-    /tmp/rpm-fusion.sh && \
+RUN /tmp/rpm-fusion.sh && \
+    /tmp/terra.sh && \
     /tmp/nvidia.sh && \
     /tmp/install-packages.sh && \
     /tmp/fangfrisch.sh && \
@@ -32,10 +32,16 @@ RUN /tmp/fips.sh && \
 COPY root/usr/lib/ostree/prepare-root.conf /usr/lib/ostree/prepare-root.conf
 
 # Configure Bootc
-COPY root/usr/lib/bootc/kargs.d/02-general.toml /usr/lib/bootc/kargs.d/02-general.toml
+COPY root/usr/lib/bootc/kargs.d/00-console.toml /usr/lib/bootc/kargs.d/00-console.toml
+COPY root/usr/lib/bootc/kargs.d/01-general.toml /usr/lib/bootc/kargs.d/01-general.toml
+COPY root/usr/lib/bootc/kargs.d/10-mitigations.toml /usr/lib/bootc/kargs.d/10-mitigations.toml
+COPY root/usr/lib/bootc/kargs.d/11-hardening.toml /usr/lib/bootc/kargs.d/11-hardening.toml
+COPY root/usr/lib/bootc/kargs.d/12-iommu.toml /usr/lib/bootc/kargs.d/12-iommu.toml
+COPY root/usr/lib/bootc/kargs.d/13-emulation.toml /usr/lib/bootc/kargs.d/13-emulation.toml
 
 # Shell customizations
 COPY root/etc/profile.d/usr-local.sh /etc/profile.d/usr-local.sh
+COPY root/etc/profile.d/tmout.sh /etc/profile.d/tmout.sh
 
 # ClamAV configuration
 COPY root/etc/clamd.d/scan.conf /etc/clamd.d/scan.conf
@@ -51,15 +57,72 @@ COPY root/usr/libexec/rkhunter.sh /usr/libexec/rkhunter.sh
 COPY root/usr/lib/systemd/system/rkhunter.timer /usr/lib/systemd/system/rkhunter.timer
 COPY root/usr/lib/systemd/system/rkhunter.service /usr/lib/systemd/system/rkhunter.service
 
+# Logging configuration
+COPY root/etc/systemd/journald.conf /etc/systemd/journald.conf
+
+# Network configuration
+COPY root/etc/NetworkManager/conf.d/00-random-mac.conf /etc/NetworkManager/conf.d/00-random-mac.conf
+COPY root/etc/NetworkManager/conf.d/01-dns.conf /etc/NetworkManager/conf.d/01-dns.conf
+COPY root/etc/systemd/resolved.conf.d/dns.conf /etc/systemd/resolved.conf.d/dns.conf
+COPY root/etc/systemd/network/ipv6-privacy-extensions.conf /etc/systemd/network/ipv6-privacy-extensions.conf
+
+# Auditd configuration
+COPY root/etc/audit/auditd.conf /etc/audit/auditd.conf
+COPY root/etc/audit/plugins.d/syslog.conf /etc/audit/plugins.d/syslog.conf
+COPY root/etc/audit/rules.d/audit-hardening.rules /etc/audit/rules.d/audit-hardening.rules
+
+# Sysctl configuration
+COPY root/etc/sysctl.d/99-hardening.conf /etc/sysctl.d/99-hardening.conf
+COPY root/etc/systemd/coredump.conf.d/disabled.conf /etc/systemd/coredump.conf.d/disabled.conf
+
+# Modprobe configuration
+COPY root/etc/modprobe.d/hardening.conf /etc/modprobe.d/hardening.conf
+
+# SSH configuration
+COPY root/etc/ssh/sshd_config.d/00-ssh-hardening.conf /etc/ssh/sshd_config.d/00-ssh-hardening.conf
+
+# Chrony configuration
+COPY root/etc/chrony.conf /etc/chrony.conf
+
+# Fail2Ban configuration
+COPY root/etc/fail2ban/jail.local /etc/fail2ban/jail.local
+COPY root/etc/fail2ban/action.d/sendmail-common.local /etc/fail2ban/action.d/sendmail-common.local
+COPY root/usr/lib/systemd/system/fail2ban.service.d/fail2ban.conf /usr/lib/systemd/system/fail2ban.service.d/fail2ban.conf
+
+# Runtime secrets configuration
+COPY root/usr/lib/systemd/system/enroll-sops-age-key.service /usr/lib/systemd/system/enroll-sops-age-key.service
+COPY root/usr/lib/systemd/system/render-sops-secrets.service /usr/lib/systemd/system/render-sops-secrets.service
+COPY root/usr/libexec/enroll-sops-age-key.sh /usr/libexec/enroll-sops-age-key.sh
+COPY root/usr/libexec/render-sops-secrets.sh /usr/libexec/render-sops-secrets.sh
+
+# PAM configuration
+COPY root/etc/security/pwquality.conf /etc/security/pwquality.conf
+COPY root/etc/security/limits.d/50-hard-core.conf /etc/security/limits.d/50-hard-core.conf
+COPY root/etc/issue /etc/issue
+COPY root/etc/issue.net /etc/issue.net
+COPY build/pam.sh /tmp/pam.sh
+RUN /tmp/pam.sh && \
+    rm -f /tmp/pam.sh
+
+# Postfix configuration
+COPY build/postfix.sh /tmp/postfix.sh
+RUN /tmp/postfix.sh && \
+    rm -f /tmp/postfix.sh
+
+# Firewalld configuration
+COPY build/firewalld.sh /tmp/firewalld.sh
+RUN /tmp/firewalld.sh && \
+    rm -f /tmp/firewalld.sh
+
 # Enable and start the necessary services
 COPY build/services.sh /tmp/services.sh
 RUN /tmp/services.sh && \
-    rm -rf /tmp/services.sh
+    rm -f /tmp/services.sh
 
 # Clean up the unnecessary files and caches to reduce the image size
 COPY build/cleanup.sh /cleanup.sh
 RUN /cleanup.sh && \
-    rm -rf /cleanup.sh
+    rm -f /cleanup.sh
 
 # Lint the final container
 RUN bootc container lint --no-truncate
