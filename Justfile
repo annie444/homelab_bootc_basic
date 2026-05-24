@@ -459,13 +459,16 @@ _build-ib $target_image $tag $type $config $registry=image_registry $ns=image_ns
     {{ debug }}
 
     declare -a args=()
-    args+=("--arch=${target_arch_raw}") 
-    args+=("--blueprint=/config.toml")
-    args+=("--bootc-ref=${registry}/${ns}/${target_image}:${tag}")
-    args+=("--bootc-default-fs=xfs")
-    args+=("--use-librepo")
-    args+=("--output-dir=/output")
     args+=("${type}")
+    args+=("--arch=${target_arch_raw}")
+    args+=("--blueprint=/config.toml")
+    args+=("--bootc-default-fs=xfs")
+    args+=("--bootc-ref=${registry}/${ns}/${target_image}:${tag}")
+    args+=("--with-buildlog")
+    args+=("--with-manifest")
+    args+=("--with-metrics")
+    args+=("--with-sbom")
+    args+=("--output-dir=/output")
 
     BUILDTMP=$(mktemp -p "${PWD}" -d -t _build-ib.XXXXXXXXXX)
 
@@ -476,9 +479,9 @@ _build-ib $target_image $tag $type $config $registry=image_registry $ns=image_ns
       --pull=newer \
       --net=host \
       --security-opt label=type:unconfined_t \
-      -v $(pwd)/${config}:/config.toml:ro \
-      -v $BUILDTMP:/output \
-      -v /var/lib/containers/storage:/var/lib/containers/storage \
+      -v "$(pwd)/${config}:/config.toml:ro" \
+      -v "$BUILDTMP:/output:rw,z" \
+      -v "/var/lib/containers/storage:/var/lib/containers/storage" \
       "${ib_image}" build \
       "${args[@]}"
 
