@@ -32,4 +32,5 @@ rm -rf /var/lib/fail2ban
 rm -rf /var/roothome/.cache
 rm -rf /var/log/*
 rm -rf /var/spool/*
+rm -rf /usr/etc
 # vim: set ft=bash et tw=4 sw=4 sts=4:
