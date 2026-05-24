@@ -41,4 +41,22 @@ dnf5 install -y \
     lorax-templates-generic \
     biosdevname \
     prefixdevname
+
+# Fedora bootc stores the EFI binaries under /usr/lib/efi/<pkg>/<ver>/EFI/ and
+# leaves /boot/efi empty (bootupd populates it at install time). The grub2.iso
+# osbuild stage, however, reads shim/grub from /boot/efi/EFI/<vendor>/, so
+# stage them into place here or ISO EFI-tree assembly fails with a missing
+# shimx64.efi. Workaround per https://supakeen.com/weblog/installer-types-for-bootc/.
+if [[ -n "${shim_pkg}" ]]; then
+    dnf5 reinstall -y "${shim_pkg}"
+fi
+
+mkdir -p /boot/efi/EFI
+for efidir in /usr/lib/efi/*/*/EFI; do
+    [[ -d "${efidir}" ]] && cp -ra "${efidir}/." /boot/efi/EFI/
+done
+
+# lorax creates a /mnt -> /var/mnt symlink during ISO assembly; ensure the
+# target directory exists in the installer environment.
+mkdir -p /var/mnt
 # vim: set ft=bash et tw=4 sw=4 sts=4:
