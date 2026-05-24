@@ -1,0 +1,2 @@
+kargs = ["ia32_emulation=0"]
+match-architectures = ["x86_64"]

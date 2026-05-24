@@ -1,0 +1,2 @@
+kargs = ["intel_iommu=on", "amd_iommu=on", "iommu.strict=1"]
+match-architectures = ["x86_64"]

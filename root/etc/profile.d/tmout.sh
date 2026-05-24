@@ -1,4 +1,4 @@
 # skip check
 # shellcheck shell=sh
-pathmunge /usr/local/bin
+declare -xr TMOUT=600
 # vim: set ft=bash et tw=4 sw=4 sts=4:

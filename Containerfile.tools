@@ -9,12 +9,20 @@
 FROM registry.fedoraproject.org/fedora:44
 
 # ── System packages ────────────────────────────────────────────────────────
+# hadolint ignore=SC2016
 RUN dnf install -y \
+    --nogpgcheck \
+    --repofrompath \
+    'terra,https://repos.fyralabs.com/terra$releasever' \
+    terra-release \
+    terra-gpg-keys\
+    && dnf install -y \
     # Shell tooling
     ShellCheck \
     shfmt \
     # OCI / container utilities
     skopeo \
+    hadolint \
     # Archive / filesystem tools
     rsync \
     cpio \
@@ -28,6 +36,8 @@ RUN dnf install -y \
     openssl \
     sbsigntools \
     binutils \
+    age \
+    sops \
     # General utilities
     jq \
     curl \

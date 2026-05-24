@@ -1,6 +1,8 @@
 #!/bin/bash
+set -Eeuxo pipefail
 
 rm -rf /tmp/*
+rm -rf /run/fail2ban
 rm -rf /run/cockpit
 rm -rf /run/dnf
 rm -rf /run/selinux-policy
@@ -26,6 +28,8 @@ rm -rf /var/lib/plocate
 rm -rf /var/lib/rkhunter
 rm -rf /var/lib/postfix
 rm -rf /var/lib/systemd
+rm -rf /var/lib/fail2ban
 rm -rf /var/roothome/.cache
 rm -rf /var/log/*
 rm -rf /var/spool/*
+# vim: set ft=bash et tw=4 sw=4 sts=4:

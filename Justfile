@@ -16,6 +16,13 @@ export container_created := `date --rfc-3339="seconds"`
 open_cmd := if os() == "windows" { "start" } else if os() == "darwin" { "open" } else { "xdg-open" }
 export target_arch := if target_arch_raw == "amd64" { "amd64" } else if target_arch_raw == "arm64" { "aarch64" } else if target_arch_raw == "x86_64" { "amd64" } else { target_arch_raw }
 
+debug := '''
+set -Eeuo pipefail
+if [ -n "${DEBUG:-}" ] && [ "${DEBUG:-}" -eq 1 ]; then
+    set -x
+fi
+'''
+
 alias build-vm := build-qcow2
 alias rebuild-vm := rebuild-qcow2
 alias run-vm := run-vm-qcow2
@@ -24,33 +31,154 @@ alias run-vm := run-vm-qcow2
 default:
     @just --list
 
-# Check Just Syntax
-[group('Just')]
-check:
+[group('Dev')]
+encrypt:
     #!/usr/bin/env bash
-    find . -type f -name "*.just" | while read -r file; do
-    	echo "Checking syntax: $file"
-    	just --unstable --fmt --check -f $file
+    {{ debug }}
+    SRC="./secrets"
+    DST="./root"
+    if ! [ -d "$SRC" ]; then
+        echo "Source directory $SRC does not exist. Please create it and add files to encrypt."
+        exit 1
+    fi
+    current_uid="$(id -ru)"
+    current_gid="$(id -rg)"
+    should_fail=0
+    get_id() {
+        local owner="$1"
+        local current="$2"
+        if ((owner == current)); then
+            printf '0\n'
+        else
+            printf '%d\n' "$owner"
+        fi
+    }
+    while IFS= read -r -d '' file; do
+        if ! stat_out="$(stat -c '%u %g %04a' -- "$file" 2>/dev/null)"; then
+            printf 'stat failed: %s\n' "$file" >&2
+            should_fail=1
+            continue
+        fi
+        read -r owner_uid group_gid target_mode <<< "$stat_out"
+        target_uid="$(get_id "$owner_uid" "$current_uid")"
+        target_gid="$(get_id "$group_gid" "$current_gid")"
+        relative_path="${file#"$SRC"/}"
+        relative_out_path="$DST/$relative_path"
+        encrypted_filename="${relative_out_path}.enc"
+        encrypted_permsname="${relative_out_path}.perms"
+        dir="$(dirname "$encrypted_filename")"
+        mkdir -p "$dir"
+        if ! just sops encrypt "$file" > "$encrypted_filename"; then
+            printf 'encryption failed: %s\n' "$file" >&2
+            if [ -f "$encrypted_filename" ]; then
+                rm -f "$encrypted_filename"
+            fi
+            if [ -f "$encrypted_permsname" ]; then
+                rm -f "$encrypted_permsname"
+            fi
+            should_fail=1
+            continue
+        fi
+        {
+            echo "target_uid=$target_uid"
+            echo "target_gid=$target_gid"
+            echo "target_mode=$target_mode"
+        } > "$encrypted_permsname"
+    done < <(find "$SRC" -type f -print0)
+    exit "$should_fail"
+
+# Run lints
+[group('Dev')]
+[parallel]
+check: check-just check-scripts check-containers
+
+# Check Just Syntax
+[group('Dev')]
+check-just:
+    #!/usr/bin/env bash
+    {{ debug }}
+    find . -type f -name "*.just" -print0 | while IFS= read -r -d '' file; do
+    	just --fmt --check -f $file
     done
-    echo "Checking syntax: Justfile"
-    just --unstable --fmt --check -f Justfile
+    just --fmt --check -f Justfile
+
+# Check scripts for shebang and safety flags
+[group('Dev')]
+check-scripts:
+    #!/usr/bin/env bash
+    {{ debug }}
+    expected_top_lines='#!/bin/bash
+    set -Eeuxo pipefail'
+    alt_expected_top_lines='#!/bin/bash
+    set -Eeuo pipefail'
+    should_fail=0
+    find . -type f -name "*.sh" -print0 | while IFS= read -r -d '' file; do
+        if [[ "$(head -n 1 "$file")" == "# skip check" ]]; then
+            [ -x "$file" ] && {
+                echo "Script $file is executable but marked to skip check. Please remove the executable permission or the skip check comment."
+                should_fail=1
+            }
+            continue
+        fi
+        [ -x "$file" ] || {
+            echo "Script $file is not executable."
+            should_fail=1
+        }
+        top_lines="$(head -n 2 "$file")"
+        if [[ "$top_lines" != "$expected_top_lines" && "$top_lines" != "$alt_expected_top_lines" ]]; then
+            echo "Script $file does not have the expected shebang and safety flags."
+            should_fail=1
+        fi
+        just shellcheck "$file" || should_fail=1
+    done
+    if ((should_fail == 1)); then
+        echo "Expected:"
+        echo "$expected_top_lines"
+        echo "Found:"
+        echo "$top_lines"
+    fi
+    exit "$should_fail"
+
+# Check containerfiles
+[group('Dev')]
+check-containers:
+    #!/usr/bin/env bash
+    {{ debug }}
+    should_fail=0
+    find . -type f \( -name "Containerfile*" -o -name "Dockerfile*" \) -print0 | while IFS= read -r -d '' file; do
+        just hadolint "$file" || should_fail=1
+    done
+    exit "$should_fail"
+
+# Format files
+[group('Dev')]
+[parallel]
+fmt: fmt-just fmt-scripts
 
 # Fix Just Syntax
-[group('Just')]
-fix:
+[group('Dev')]
+fmt-just:
     #!/usr/bin/env bash
-    find . -type f -name "*.just" | while read -r file; do
-    	echo "Checking syntax: $file"
-    	just --unstable --fmt -f $file
+    {{ debug }}
+    find . -type f -name "*.just" -print0 | while IFS= read -r -d '' file; do
+    	just --fmt -f $file
     done
-    echo "Checking syntax: Justfile"
-    just --unstable --fmt -f Justfile || { exit 1; }
+    just --fmt -f Justfile || { exit 1; }
+
+# Fix scripts syntax
+[group('Dev')]
+fmt-scripts:
+    #!/usr/bin/env bash
+    {{ debug }}
+    find . -type f -name "*.sh" -print0 | while IFS= read -r -d '' file; do
+        just shfmt "$file"
+    done
 
 # Clean Repo
 [group('Utility')]
 clean:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     touch _build
     find *_build* -exec rm -rf {} \;
     rm -f previous.manifest.json
@@ -69,6 +197,7 @@ sudo-clean:
 [private]
 sudoif command *args:
     #!/usr/bin/env bash
+    {{ debug }}
     function sudoif(){
         if [[ "${EUID}" -eq 0 ]]; then
             "$@"
@@ -84,7 +213,7 @@ sudoif command *args:
 
 _podman_cmd *args:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     declare -a podman_args=()
     if [[ "$(uname)" == "Darwin" ]]; then
         if [[ -z "${podman_connection}" ]]; then
@@ -99,7 +228,7 @@ _podman_cmd *args:
 
 _sudo_podman_cmd *args:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     declare -a podman_args=()
     if [[ "$(uname)" == "Darwin" ]]; then
         if [[ -z "${podman_connection}" ]]; then
@@ -126,10 +255,12 @@ build-tools:
 [private]
 _tool *args:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     just _podman_cmd run \
         --rm \
+        --volume "${SOPS_AGE_KEY_FILE}:/.sops-age-key.txt:ro" \
         --volume "$(pwd):/work:z" \
+        --env "SOPS_AGE_KEY_FILE=/.sops-age-key.txt" \
         --workdir /work \
         "${tools_image}" \
         {{ args }}
@@ -138,11 +269,13 @@ _tool *args:
 [private]
 _tool_privileged *args:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     just _sudo_podman_cmd run \
         --rm \
         --privileged \
+        --volume "${SOPS_AGE_KEY_FILE}:/.sops-age-key.txt:ro" \
         --volume "$(pwd):/work:z" \
+        --env "SOPS_AGE_KEY_FILE=/.sops-age-key.txt" \
         --workdir /work \
         "${tools_image}" \
         {{ args }}
@@ -167,8 +300,7 @@ _tool_privileged *args:
 # Build the image using the specified parameters
 build $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
     #!/usr/bin/env bash
-
-    set -euxo pipefail
+    {{ debug }}
 
     container_host="${target_image}"
 
@@ -233,7 +365,7 @@ build $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
 
 run-container $target_image $tag=default_tag $registry=image_registry $ns=image_ns: _mkoutputdir
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     declare -a vols
 
     vols=("-v" "${output_dir}:/output")
@@ -275,7 +407,7 @@ run-container $target_image $tag=default_tag $registry=image_registry $ns=image_
 
 _rootful_load_image $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
 
     # Check if already running as root or under sudo
     if [[ -n "${SUDO_USER:-}" || "${UID}" -eq "0" ]]; then
@@ -308,7 +440,7 @@ _rootful_load_image $target_image $tag=default_tag $registry=image_registry $ns=
 
 _mkoutputdir:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     if ! [[ -d "${output_dir}" ]]; then
         mkdir -p "${output_dir}"
     fi
@@ -324,7 +456,7 @@ _mkoutputdir:
 # Example: just _rebuild-ib localhost/fedora latest qcow2 config/user.toml
 _build-ib $target_image $tag $type $config $registry=image_registry $ns=image_ns: (_rootful_load_image target_image tag registry ns) && _mkoutputdir
     #!/usr/bin/env bash
-    set -euxo pipefail
+    {{ debug }}
 
     declare -a args=()
     args+=("--arch=${target_arch_raw}") 
@@ -391,7 +523,7 @@ rebuild-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config $registry=image_registry $ns=image_ns:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
 
     # Determine the image file based on the type
     image_file="output/${type}/disk.${type}"
@@ -460,8 +592,7 @@ run-vm-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
 [group('Run Virtal Machine')]
 spawn-vm rebuild="0" type="qcow2" ram="6G":
     #!/usr/bin/env bash
-
-    set -euo pipefail
+    {{ debug }}
 
     [ "{{ rebuild }}" -eq 1 ] && echo "Rebuilding the ISO" && just build-vm {{ rebuild }} {{ type }}
 
@@ -474,24 +605,46 @@ spawn-vm rebuild="0" type="qcow2" ram="6G":
       --vsock=false --pass-ssh-key=false \
       -i ./output/**/*.{{ type }}
 
-# Lint all Bash scripts with shellcheck (uses tools container if shellcheck not installed natively)
+# Run the shellcheck shell script linter
 [group('Utility')]
-lint:
+shellcheck $file:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     if command -v shellcheck &>/dev/null; then
-        find . -iname "*.sh" -type f -not -path "./.git/*" -exec shellcheck "{}" ";"
+        shellcheck --check-sourced --external-sources "$file"
     else
-        just _tool bash -c 'find /work -iname "*.sh" -type f -not -path "/work/.git/*" -exec shellcheck "{}" ";"'
+        just _tool bash -c "shellcheck --check-sourced --external-sources '$file'"
     fi
 
-# Format all Bash scripts with shfmt (uses tools container if shfmt not installed natively)
+# Run the shfmt shell script formatter
 [group('Utility')]
-format:
+shfmt $file:
     #!/usr/bin/env bash
-    set -eoux pipefail
+    {{ debug }}
     if command -v shfmt &>/dev/null; then
-        find . -iname "*.sh" -type f -not -path "./.git/*" -exec shfmt --write "{}" ";"
+        shfmt --write --indent=4  "$file"
     else
-        just _tool bash -c 'find /work -iname "*.sh" -type f -not -path "/work/.git/*" -exec shfmt --write "{}" ";"'
+        just _tool bash -c "shfmt --write --indent=4  '$file'"
+    fi
+
+# Run the hadolint Containerfile linter
+[group('Utility')]
+hadolint $file:
+    #!/usr/bin/env bash
+    {{ debug }}
+    if command -v hadolint &>/dev/null; then
+        hadolint "$file"
+    else
+        just _tool bash -c "hadolint '$file'"
+    fi
+
+# Run the sops encryption utility
+[group('Utility')]
+sops +args:
+    #!/usr/bin/env bash
+    {{ debug }}
+    if command -v sops &>/dev/null; then
+        sops {{ args }}
+    else
+        just _tool bash -c 'sops {{ args }}'
     fi

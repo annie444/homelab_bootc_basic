@@ -1,9 +1,14 @@
 @container-management
 @server-product-environment
+age
+audit-rules
+audispd-plugins
 bootc
 bootupd
 btop
 btrfs-progs
+cachefilesd
+chrony
 clamav
 clamav-freshclam
 clamd
@@ -20,6 +25,8 @@ cockpit-storaged
 cockpit-system
 composefs
 coreutils
+cracklib
+cracklib-dicts
 cronie
 cryptsetup
 dialog
@@ -29,6 +36,8 @@ dracut-config-generic
 e2fsprogs
 efibootmgr
 expect
+fail2ban
+fail2ban-firewalld
 findutils
 firewalld
 gawk
@@ -42,6 +51,7 @@ kernel-headers
 kernel-modules
 less
 libcxxabi
+libpwquality
 man-db
 man-db-cron
 man-pages
@@ -66,12 +76,15 @@ python3-dnspython
 restic
 ripgrep
 rkhunter
+rng-tools
+rpm-plugin-audit
 rsyslog
 rsyslog-doc
 sbsigntools
 sed
 setroubleshoot
 setroubleshoot-server
+sops
 systemd
 systemd-boot
 systemd-container
@@ -81,4 +94,5 @@ tmux
 util-linux
 vim-enhanced
 wget
+whois
 xfsprogs
