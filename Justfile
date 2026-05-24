@@ -6,6 +6,7 @@ export podman_connection := env("PODMAN_CONNECTION", "")
 export fedora_version := env("FEDORA_VERSION", "44")
 export output_dir := justfile_directory() + "/output"
 export tools_image := env("TOOLS_IMAGE", "localhost/homelab-tools:latest")
+export installer_image := env("INSTALLER_IMAGE", "installer")
 export target_arch_raw := env("TARGET_ARCH", arch())
 git_tag_version := `git tag -l | sed -E 's/^[^0-9]*//g' | sort --version-sort | tail -n 1`
 export container_version := if git_tag_version != "" { git_tag_version } else { "0.1.0-0" }
@@ -312,7 +313,7 @@ build $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
         container_description="Interactive installer environment for HomeLabOS bare-metal installation"
     else
         container_title="Fedora ${fedora_version} bootc secure base for ${container_host}"
-        container_description="Fedora ${fedora_version} bootc-derived OS with sd-boot/UKI tooling, systemd credentials, sysext/confext support, repart, sysupdate extension channels, portable services, homed, and nspawn support, built for ${container_host}."
+        container_description="Fedora ${fedora_version} bootc-derived OS with sd-boot/UKI tooling, systemd credentials, repart, and nspawn support, built for ${container_host}."
     fi
 
     declare -a build_args
@@ -489,6 +490,58 @@ _build-ib $target_image $tag $type $config $registry=image_registry $ns=image_ns
     sudo rmdir $BUILDTMP
     sudo chown -R $USER:$USER output/
 
+# Build a bootc-installer ISO using Image Builder (IB).
+#
+# Unlike qcow2/raw (which deploy the OS filesystem directly and need no
+# depsolving), an ISO needs an Anaconda *installer environment*. That maps to
+# image-builder's `bootc-installer` type, which takes two container refs:
+#   --bootc-ref                  -> the installer environment (Containerfile.installer)
+#   --bootc-installer-payload-ref-> the OS that gets installed (the homelab image)
+# Both images must already exist in (root) podman storage; this recipe loads both.
+# Note: --bootc-default-fs is intentionally omitted -- the payload's root
+# filesystem is chosen at install time (blueprint/kickstart), not now.
+#
+# Parameters:
+#   payload_image: The OS image to install (ex. homelab02)
+#   tag:           The tag shared by the installer and payload images
+#   config:        The Image Builder blueprint (default: config/iso.toml)
+
+# Example: just _build-installer-ib homelab02 latest config/iso.toml
+_build-installer-ib $payload_image $tag $config $registry=image_registry $ns=image_ns: (_rootful_load_image installer_image tag registry ns) (_rootful_load_image payload_image tag registry ns) && _mkoutputdir
+    #!/usr/bin/env bash
+    {{ debug }}
+
+    declare -a args=()
+    args+=("bootc-installer")
+    args+=("--arch=${target_arch_raw}")
+    args+=("--blueprint=/config.toml")
+    args+=("--bootc-ref=${registry}/${ns}/${installer_image}:${tag}")
+    args+=("--bootc-installer-payload-ref=${registry}/${ns}/${payload_image}:${tag}")
+    args+=("--with-buildlog")
+    args+=("--with-manifest")
+    args+=("--with-metrics")
+    args+=("--with-sbom")
+    args+=("--output-dir=/output")
+
+    BUILDTMP=$(mktemp -p "${PWD}" -d -t _build-ib.XXXXXXXXXX)
+
+    just _sudo_podman_cmd run \
+      --rm \
+      -it \
+      --privileged \
+      --pull=newer \
+      --net=host \
+      --security-opt label=type:unconfined_t \
+      -v "$(pwd)/${config}:/config.toml:ro" \
+      -v "$BUILDTMP:/output:rw,z" \
+      -v "/var/lib/containers/storage:/var/lib/containers/storage" \
+      "${ib_image}" build \
+      "${args[@]}"
+
+    sudo mv -f $BUILDTMP/* output/
+    sudo rmdir $BUILDTMP
+    sudo chown -R $USER:$USER output/
+
 # Podman builds the image from the Containerfile and creates a bootable image
 # Parameters:
 #   target_image: The name of the image to build (ex. localhost/fedora)
@@ -507,9 +560,13 @@ build-qcow2 $target_image $tag=default_tag $registry=image_registry $ns=image_ns
 [group('Build Virtal Machine Image')]
 build-raw $target_image $tag=default_tag $registry=image_registry $ns=image_ns: && (_build-ib target_image tag "raw" "config/user.toml" registry ns)
 
-# Build an ISO virtual machine image
+# Build the Anaconda installer-environment OCI image (run before build-iso)
 [group('Build Virtal Machine Image')]
-build-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: && (_build-ib target_image tag "iso" "config/user.toml" registry ns)
+build-installer $tag=default_tag $registry=image_registry $ns=image_ns: (build installer_image tag registry ns)
+
+# Build an installer ISO (installer + payload OCI images must already exist; else use rebuild-iso)
+[group('Build Virtal Machine Image')]
+build-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: && (_build-installer-ib target_image tag "config/iso.toml" registry ns)
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
@@ -519,9 +576,9 @@ rebuild-qcow2 $target_image $tag=default_tag $registry=image_registry $ns=image_
 [group('Build Virtal Machine Image')]
 rebuild-raw $target_image $tag=default_tag $registry=image_registry $ns=image_ns: && (_rebuild-ib target_image tag "raw" "config/user.toml" registry ns)
 
-# Rebuild an ISO virtual machine image
+# Rebuild the installer + payload OCI images, then assemble the ISO
 [group('Build Virtal Machine Image')]
-rebuild-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: && (_rebuild-ib target_image tag "iso" "config/user.toml" registry ns)
+rebuild-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: (build installer_image tag registry ns) (build target_image tag registry ns) && (_build-installer-ib target_image tag "config/iso.toml" registry ns)
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config $registry=image_registry $ns=image_ns:
@@ -537,6 +594,17 @@ _run-vm $target_image $tag $type $config $registry=image_registry $ns=image_ns:
     # Build the image if it does not exist
     if [[ ! -f "${image_file}" ]]; then
         just "build-${type}" "$target_image" "$tag" "$registry" "$ns"
+    fi
+
+    # The bootc-installer ISO output path is not fixed across image-builder
+    # versions; fall back to the first ISO found under output/ if needed.
+    if [[ $type == iso && ! -f "${image_file}" ]]; then
+        image_file="$(find output -type f -name '*.iso' -print -quit)"
+        if [[ -z "${image_file}" ]]; then
+            echo "No ISO found under output/ after build." >&2
+            exit 1
+        fi
+        echo "Using ISO: ${image_file}"
     fi
 
     # Determine an available port (cross-platform: lsof on macOS, ss on Linux)
@@ -589,7 +657,7 @@ run-vm-raw $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
 
 # Run a virtual machine from an ISO
 [group('Run Virtal Machine')]
-run-vm-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: && (_run-vm target_image tag "iso" "config/user.toml" registry ns)
+run-vm-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: && (_run-vm target_image tag "iso" "config/iso.toml" registry ns)
 
 # Run a virtual machine using systemd-vmspawn
 [group('Run Virtal Machine')]

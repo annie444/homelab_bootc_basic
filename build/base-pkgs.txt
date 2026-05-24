@@ -1,4 +1,5 @@
 @container-management
+@domain-client
 @server-product-environment
 age
 audit-rules
