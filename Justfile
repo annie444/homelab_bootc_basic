@@ -539,9 +539,9 @@ _build-installer-ib $payload_image $tag $config $registry=image_registry $ns=ima
       "${ib_image}" build \
       "${args[@]}"
 
-    sudo mv -f $BUILDTMP/* output/
-    sudo rmdir $BUILDTMP
-    sudo chown -R $USER:$USER output/
+    sudo mv -f "$BUILDTMP"/* "${output_dir}/"
+    sudo rmdir "$BUILDTMP"
+    sudo chown -R $USER:$USER "${output_dir}/"
 
 # Podman builds the image from the Containerfile and creates a bootable image
 # Parameters:
