@@ -507,7 +507,7 @@ _build-ib $target_image $tag $type $config $registry=image_registry $ns=image_ns
 #   config:        The Image Builder blueprint (default: config/iso.toml)
 
 # Example: just _build-installer-ib homelab02 latest config/iso.toml
-_build-installer-ib $payload_image $tag $config $registry=image_registry $ns=image_ns: (_rootful_load_image installer_image tag registry ns) (_rootful_load_image payload_image tag registry ns) && _mkoutputdir
+_build-installer-ib $payload_image $tag $config $registry=image_registry $ns=image_ns: (_rootful_load_image installer_image tag registry ns) (_rootful_load_image payload_image tag registry ns) _mkoutputdir
     #!/usr/bin/env bash
     {{ debug }}
 
