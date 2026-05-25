@@ -542,6 +542,15 @@ _build-installer-ib $payload_image $tag $config $registry=image_registry $ns=ima
     sudo mv -f "$BUILDTMP"/* "${output_dir}/"
     sudo rmdir "$BUILDTMP"
     sudo chown -R $USER:$USER "${output_dir}/"
+    image_file="$(find "${output_dir}" -type f -name '*.iso' -print -quit)"
+    if ! [ -f "$image_file" ]; then
+        echo "No ISO found under ${output_dir}/ after build." >&2
+        exit 1
+    fi
+    if ! [ -d "${output_dir}/bootiso" ]; then
+        mkdir -p "${output_dir}/bootiso"
+    fi
+    cp "$image_file" "${output_dir}/bootiso/install.iso"
 
 # Podman builds the image from the Containerfile and creates a bootable image
 # Parameters:
@@ -595,17 +604,6 @@ _run-vm $target_image $tag $type $config $registry=image_registry $ns=image_ns:
     # Build the image if it does not exist
     if [[ ! -f "${image_file}" ]]; then
         just "build-${type}" "$target_image" "$tag" "$registry" "$ns"
-    fi
-
-    # The bootc-installer ISO output path is not fixed across image-builder
-    # versions; fall back to the first ISO found under output/ if needed.
-    if [[ $type == iso && ! -f "${image_file}" ]]; then
-        image_file="$(find output -type f -name '*.iso' -print -quit)"
-        if [[ -z "${image_file}" ]]; then
-            echo "No ISO found under output/ after build." >&2
-            exit 1
-        fi
-        echo "Using ISO: ${image_file}"
     fi
 
     # Determine an available port (cross-platform: lsof on macOS, ss on Linux)
