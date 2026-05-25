@@ -1,5 +1,13 @@
+# Installer-ISO boot args (this blueprint is only used for the bootc-installer
+# ISO, not the installed system). Force the graphical Anaconda installer onto
+# the VGA console so it renders in the browser VNC: inst.graphical appears after
+# image-builder's default inst.text on the cmdline and the later display-mode
+# arg wins. No serial console here on purpose -- the installed system gets
+# console=ttyS0 from the payload image's kargs.d/00-console.toml, so adding it
+# to the installer only sent Anaconda to the serial console (the container's
+# stdout) instead of the VNC display.
 [customizations.kernel]
-append = "console=tty1 console=ttyS0,115200n8"
+append = "console=ttyS0,115200n8 console=tty1 inst.text inst.graphical"
 
 [[customizations.user]]
 name = "annie"

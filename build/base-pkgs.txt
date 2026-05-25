@@ -94,6 +94,7 @@ systemd-ukify
 tmux
 util-linux
 vim-enhanced
-wget
+wget2
+wget2-wget
 whois
 xfsprogs
