@@ -388,7 +388,7 @@ push $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
         just _podman_cmd push \
             --format oci \
             --retry 3 \
-            --retry-delay 3 \
+            --retry-delay 3s \
             "${container}"
     done
 run-container $target_image $tag=default_tag $registry=image_registry $ns=image_ns: _mkoutputdir
