@@ -319,12 +319,14 @@ build $target_image $install_target='' $tag=default_tag $registry=image_registry
             exit 1
         fi
         build_args+=("--build-arg=TARGET_IMAGE=\"${install_target}\"")
-        tmp="${target_image##*/}"
+        containerfile="${target_image}"
+        tmp="${install_target##*/}"
         result_image="${tmp%%:*}"
         target_image="${result_image}-${target_image}"
     else
         container_title="Fedora ${fedora_version} bootc secure base for ${container_host}"
         container_description="Fedora ${fedora_version} bootc-derived OS with sd-boot/UKI tooling, systemd credentials, repart, and nspawn support, built for ${container_host}."
+        containerfile="${target_image}"
     fi
 
     declare -a labels
@@ -368,7 +370,7 @@ build $target_image $install_target='' $tag=default_tag $registry=image_registry
         --inherit-labels \
         --layers \
         --pull=newer \
-        --file="Containerfile.${target_image}" \
+        --file="Containerfile.${containerfile}" \
         "${tags[@]}" \
         .
 
