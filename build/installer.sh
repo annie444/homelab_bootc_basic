@@ -67,18 +67,18 @@ if [[ -n "${shim_pkg}" ]]; then
     dnf5 reinstall -y "${shim_pkg}"
 fi
 
-dnf5 clean all
-
 mkdir -p /boot/efi/EFI
 for efidir in /usr/lib/efi/*/*/EFI; do
     [[ -d "${efidir}" ]] && cp -ra "${efidir}/." /boot/efi/EFI/
 done
 
+dnf5 clean all
+
 mkdir -p /var/mnt
 
 # some configuration for our ISO
 
-RUN mkdir -p /usr/lib/image-builder/bootc
+mkdir -p /usr/lib/image-builder/bootc
 
 cat >/usr/lib/image-builder/bootc/iso.yaml <<EOT
 label: "Fedora-bootc-Installer"
