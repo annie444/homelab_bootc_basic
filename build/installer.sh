@@ -104,9 +104,15 @@ passwd -d root
 
 mv /usr/share/anaconda/list-harddrives-stub /usr/bin/list-harddrives
 mv /etc/yum.repos.d /etc/anaconda.repos.d
+if [ -e /etc/systemd/system/default.target ]; then
+    rm -f /etc/systemd/system/default.target
+fi
 ln -s /lib/systemd/system/anaconda.target /etc/systemd/system/default.target
 rm -v /usr/lib/systemd/system-generators/systemd-gpt-auto-generator
 
+if [ -e /usr/lib/systemd/system/autovt@.service ]; then
+    rm -f /usr/lib/systemd/system/autovt@.service
+fi
 ln -s /usr/lib/systemd/system/anaconda-shell@.service /usr/lib/systemd/system/autovt@.service
 
 mkdir /usr/lib/systemd/logind.conf.d
