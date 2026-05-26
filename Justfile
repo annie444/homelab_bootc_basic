@@ -299,7 +299,7 @@ _tool_privileged *args:
 #
 
 # Build the image using the specified parameters
-build $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
+build $target_image $install_target='' $tag=default_tag $registry=image_registry $ns=image_ns:
     #!/usr/bin/env bash
     {{ debug }}
 
@@ -308,16 +308,24 @@ build $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
     container_url="${container_source}/pkgs/container/${container_host}"
     container_documentation="${container_source}/blob/main/README.md"
 
+    declare -a build_args
+    build_args+=("--build-arg=FEDORA_VERSION=\"${fedora_version}\"")
+
     if [[ "${target_image}" == "installer" ]]; then
         container_title="Fedora ${fedora_version} bootc secure base installer image"
         container_description="Interactive installer environment for HomeLabOS bare-metal installation"
+        if [ -z "${install_target:-}" ]; then
+            echo "Error: install_target must be specified when building the installer image." >&2
+            exit 1
+        fi
+        build_args+=("--build-arg=TARGET_IMAGE=\"${install_target}\"")
+        tmp="${target_image##*/}"
+        result_image="${tmp%%:*}"
+        target_image="${result_image}-${target_image}"
     else
         container_title="Fedora ${fedora_version} bootc secure base for ${container_host}"
         container_description="Fedora ${fedora_version} bootc-derived OS with sd-boot/UKI tooling, systemd credentials, repart, and nspawn support, built for ${container_host}."
     fi
-
-    declare -a build_args
-    build_args+=("--build-arg=FEDORA_VERSION=\"${fedora_version}\"")
 
     declare -a labels
     labels+=("org.opencontainers.image.title=\"${container_title}\"")
@@ -364,6 +372,22 @@ build $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
         "${tags[@]}" \
         .
 
+# Push the image using the specified parameters
+push $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
+    #!/usr/bin/env bash
+    {{ debug }}
+
+    declare -a containers
+    containers+=("${registry}/${ns}/${target_image}:${tag}")
+    containers+=("${registry}/${ns}/${target_image}:${container_version}")
+
+    for container in "${containers[@]}"; do
+        just _podman_cmd push \
+            --format oci \
+            --retry 3 \
+            --retry-delay 3 \
+            "${container}"
+    done
 run-container $target_image $tag=default_tag $registry=image_registry $ns=image_ns: _mkoutputdir
     #!/usr/bin/env bash
     {{ debug }}
@@ -512,11 +536,11 @@ _build-installer-ib $payload_image $tag $config $registry=image_registry $ns=ima
     {{ debug }}
 
     declare -a args=()
-    args+=("bootc-installer")
+    args+=("bootc-generic-iso")
     args+=("--arch=${target_arch_raw}")
     args+=("--blueprint=/config.toml")
     args+=("--bootc-default-fs=xfs")
-    args+=("--bootc-ref=${registry}/${ns}/${installer_image}:${tag}")
+    args+=("--bootc-ref=${registry}/${ns}/${payload_image}-${installer_image}:${tag}")
     args+=("--bootc-installer-payload-ref=${registry}/${ns}/${payload_image}:${tag}")
     args+=("--with-buildlog")
     args+=("--with-manifest")

@@ -1,6 +1,17 @@
 #!/bin/bash
 set -Eeuxo pipefail
 
+if ! [ $# -eq 1 ]; then
+    echo "Usage: $0 <target-image-ref>" >&2
+    exit 1
+fi
+target_image="$1"
+
+if [ -z "${target_image:-}" ]; then
+    echo "Usage: $0 <target-image-ref>" >&2
+    exit 1
+fi
+
 # Packages that turn a fedora-bootc base into an Anaconda *installer environment*
 # container, as required by image-builder's `bootc-installer` image type.
 # The OS that actually gets installed is supplied separately via
@@ -28,19 +39,24 @@ dnf5 -y distro-sync --allowerasing
 dnf5 -y upgrade --refresh
 
 dnf5 install -y \
+    "${grub_cdboot:+$grub_cdboot}" \
+    "${shim_pkg:+$shim_pkg}" \
     anaconda \
-    anaconda-install-env-deps \
+    anaconda-install-img-deps \
     anaconda-dracut \
     dracut-config-generic \
     dracut-network \
     net-tools \
-    squashfs-tools \
-    "${grub_cdboot:+$grub_cdboot}" \
-    "${shim_pkg:+$shim_pkg}" \
-    python3-mako \
-    lorax-templates-generic \
-    biosdevname \
-    prefixdevname
+    plymouth \
+    default-fonts-core-sans \
+    default-fonts-other-sans \
+    google-noto-sans-cjk-fonts
+
+# these are necessary build tools, if you have a separate build container
+# in `--bootc-build-ref` then these can go there
+dnf install -qy \
+    xorrisofs \
+    squashfs-tools
 
 # Fedora bootc stores the EFI binaries under /usr/lib/efi/<pkg>/<ver>/EFI/ and
 # leaves /boot/efi empty (bootupd populates it at install time). The grub2.iso
@@ -51,12 +67,69 @@ if [[ -n "${shim_pkg}" ]]; then
     dnf5 reinstall -y "${shim_pkg}"
 fi
 
+dnf5 clean all
+
 mkdir -p /boot/efi/EFI
 for efidir in /usr/lib/efi/*/*/EFI; do
     [[ -d "${efidir}" ]] && cp -ra "${efidir}/." /boot/efi/EFI/
 done
 
-# lorax creates a /mnt -> /var/mnt symlink during ISO assembly; ensure the
-# target directory exists in the installer environment.
 mkdir -p /var/mnt
+
+# some configuration for our ISO
+
+RUN mkdir -p /usr/lib/image-builder/bootc
+
+cat >/usr/lib/image-builder/bootc/iso.yaml <<EOT
+label: "Fedora-bootc-Installer"
+grub2:
+  entries:
+    - name: "Install Fedora (bootc)"
+      linux: "/images/pxeboot/vmlinuz inst.stage2=hd:LABEL=Fedora-bootc-Installer console=tty0 console=ttyS0,115200n8 console=tty1 inst.text inst.graphical selinux=0 rhgb quiet"
+      initrd: "/images/pxeboot/initrd.img"
+EOT
+
+# some configuration for anaconda
+
+cat >/usr/share/anaconda/interactive-defaults.ks <<EOT
+bootc --source-imgref registry:${target_image} --target-imgref ${target_image}
+EOT
+
+# these things are normally performed by `lorax` to make `anaconda` work; this is the
+# bare minimum to get things to work
+
+echo "install:x:0:0:root:/root:/usr/libexec/anaconda/run-anaconda" >>/etc/passwd
+echo "install::14438:0:99999:7:::" >>/etc/shadow
+passwd -d root
+
+mv /usr/share/anaconda/list-harddrives-stub /usr/bin/list-harddrives
+mv /etc/yum.repos.d /etc/anaconda.repos.d
+ln -s /lib/systemd/system/anaconda.target /etc/systemd/system/default.target
+rm -v /usr/lib/systemd/system-generators/systemd-gpt-auto-generator
+
+ln -s /usr/lib/systemd/system/anaconda-shell@.service /usr/lib/systemd/system/autovt@.service
+
+mkdir /usr/lib/systemd/logind.conf.d
+cat >/usr/lib/systemd/logind.conf.d/anaconda-shell.conf <<EOT
+[Login]
+ReserveVT=2
+EOT
+
+mkdir "$(realpath /root)"
+kernel=$(kernel-install list --json pretty | jq -r '.[] | select(.has_kernel == true) | .version')
+DRACUT_NO_XATTR=1 dracut --force -v --zstd --reproducible --no-hostonly \
+    --add "anaconda" \
+    "/usr/lib/modules/${kernel}/initramfs.img" "${kernel}"
+
+mkdir /etc/systemd/user/pipewire.service.d/
+cat >/etc/systemd/user/pipewire.service.d/allowroot.conf <<EOT
+[Unit]
+ConditionUser=
+EOT
+
+mkdir /etc/systemd/user/pipewire.socket.d/
+cat >/etc/systemd/user/pipewire.socket.d/allowroot.conf <<EOT
+[Unit]
+ConditionUser=
+EOT
 # vim: set ft=bash et tw=4 sw=4 sts=4:
