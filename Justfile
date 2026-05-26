@@ -311,18 +311,19 @@ build $target_image $install_target='' $tag=default_tag $registry=image_registry
     declare -a build_args
     build_args+=("--build-arg=FEDORA_VERSION=\"${fedora_version}\"")
 
-    if [[ "${target_image}" == "installer" ]]; then
+    if [[ "${target_image}" == "${installer_image}" ]]; then
         container_title="Fedora ${fedora_version} bootc secure base installer image"
         container_description="Interactive installer environment for HomeLabOS bare-metal installation"
         if [ -z "${install_target:-}" ]; then
             echo "Error: install_target must be specified when building the installer image." >&2
             exit 1
         fi
-        build_args+=("--build-arg=TARGET_IMAGE=\"${install_target}\"")
+        # install_target is just the final payload image name (e.g. homelab02);
+        # reconstruct the full registry ref baked into the installer's kickstart.
+        install_ref="${registry}/${ns}/${install_target}:${tag}"
+        build_args+=("--build-arg=TARGET_IMAGE=\"${install_ref}\"")
         containerfile="${target_image}"
-        tmp="${install_target##*/}"
-        result_image="${tmp%%:*}"
-        target_image="${result_image}-${target_image}"
+        target_image="${install_target}-${target_image}"
     else
         container_title="Fedora ${fedora_version} bootc secure base for ${container_host}"
         container_description="Fedora ${fedora_version} bootc-derived OS with sd-boot/UKI tooling, systemd credentials, repart, and nspawn support, built for ${container_host}."
@@ -533,7 +534,7 @@ _build-ib $target_image $tag $type $config $registry=image_registry $ns=image_ns
 #   config:        The Image Builder blueprint (default: config/iso.toml)
 
 # Example: just _build-installer-ib homelab02 latest config/iso.toml
-_build-installer-ib $payload_image $tag $config $registry=image_registry $ns=image_ns: (_rootful_load_image installer_image tag registry ns) (_rootful_load_image payload_image tag registry ns) _mkoutputdir
+_build-installer-ib $payload_image $tag $config $registry=image_registry $ns=image_ns: (_rootful_load_image (payload_image + "-" + installer_image) tag registry ns) (_rootful_load_image payload_image tag registry ns) _mkoutputdir
     #!/usr/bin/env bash
     {{ debug }}
 
@@ -598,7 +599,7 @@ build-raw $target_image $tag=default_tag $registry=image_registry $ns=image_ns: 
 
 # Build the Anaconda installer-environment OCI image (run before build-iso)
 [group('Build Virtal Machine Image')]
-build-installer $tag=default_tag $registry=image_registry $ns=image_ns: (build installer_image tag registry ns)
+build-installer $target_image $tag=default_tag $registry=image_registry $ns=image_ns: (build installer_image target_image tag registry ns)
 
 # Build an installer ISO (installer + payload OCI images must already exist; else use rebuild-iso)
 [group('Build Virtal Machine Image')]
@@ -614,7 +615,7 @@ rebuild-raw $target_image $tag=default_tag $registry=image_registry $ns=image_ns
 
 # Rebuild the installer + payload OCI images, then assemble the ISO
 [group('Build Virtal Machine Image')]
-rebuild-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: (build installer_image tag registry ns) (build target_image tag registry ns) && (_build-installer-ib target_image tag "config/iso.toml" registry ns)
+rebuild-iso $target_image $tag=default_tag $registry=image_registry $ns=image_ns: (build installer_image target_image tag registry ns) (build target_image '' tag registry ns) && (_build-installer-ib target_image tag "config/iso.toml" registry ns)
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config $registry=image_registry $ns=image_ns:

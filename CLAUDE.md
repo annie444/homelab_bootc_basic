@@ -15,7 +15,7 @@ There is no application code — the "source" is Containerfiles, shell scripts, 
 
 `rebuild-*` recipes re-run stage 1 then stage 2; `build-*` recipes assume the OCI image already exists.
 
-**ISOs are different from qcow2/raw.** qcow2/raw deploy the OS filesystem directly and never depsolve. An ISO needs an Anaconda *installer environment*, so it uses image-builder's `bootc-installer` type with **two** container refs: `--bootc-ref` = the installer environment (`Containerfile.installer`, built via `just build-installer`) and `--bootc-installer-payload-ref` = the OS to install (the homelab image). This lives in the `_build-installer-ib` recipe, separate from `_build-ib`. Building an ISO requires *both* the `installer` and payload OCI images to exist — `just rebuild-iso <target>` builds everything in one shot.
+**ISOs are different from qcow2/raw.** qcow2/raw deploy the OS filesystem directly and never depsolve. An ISO needs an Anaconda *installer environment*, so it uses image-builder's `bootc-installer` type with **two** container refs: `--bootc-ref` = the installer environment (`Containerfile.installer`, built per-payload via `just build-installer <target>` as `<target>-installer`) and `--bootc-installer-payload-ref` = the OS to install (the homelab image). This lives in the `_build-installer-ib` recipe, separate from `_build-ib`. Building an ISO requires *both* the `<target>-installer` and payload OCI images to exist — `just rebuild-iso <target>` builds everything in one shot.
 
 ## Common commands
 
@@ -27,7 +27,7 @@ just rebuild-qcow2 homelab01 # rebuild OCI image + disk
 just run-vm-qcow2 homelab01  # boot the qcow2 in a QEMU web VM (alias: run-vm)
 just run-container homelab01 # drop into a shell in the built OCI image
 
-just build-installer         # build the Anaconda installer-environment image
+just build-installer homelab01  # build the Anaconda installer-environment image for a payload
 just rebuild-iso homelab01   # rebuild installer + payload images, then the ISO
 just run-vm-iso homelab01     # build (if needed) and boot the installer ISO
 
