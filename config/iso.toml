@@ -28,15 +28,47 @@ groups = [
 uid = 1001
 gid = 1001
 
+[customizations.installer]
+unattended = true
+
+[customizations.installer.kickstart]
+contents = """
+# Basic setup
+text
+lang en_US.UTF-8
+keyboard us
+timezone America/Los_Angeles --utc
+network --bootproto=dhcp --device=link --activate --onboot=on
+
+# Basic partitioning
+zerombr
+clearpart --all --initlabel --disklabel=gpt
+autopart --type=plain --fstype=xfs --nohome
+
+bootc --source-imgref registry:ghcr.io/annie444/homelab02:latest --target-imgref ghcr.io/annie444/homelab02:latest
+
+rootpw --iscrypted locked
+
+reboot --eject
+
+%post
+echo -e "%wheel\tALL=(ALL)\tNOPASSWD: ALL" > "/etc/sudoers.d/wheel"
+chmod 0440 /etc/sudoers.d/wheel
+restorecon -rvF /etc/sudoers.d
+%end
+"""
+
 [customizations.installer.modules]
 enable = [
-  "org.fedoraproject.Anaconda.Modules.Storage",
-  "org.fedoraproject.Anaconda.Modules.Runtime",
+  "org.fedoraproject.Anaconda.Modules.Localization",
   "org.fedoraproject.Anaconda.Modules.Network",
+  "org.fedoraproject.Anaconda.Modules.Payloads",
+  "org.fedoraproject.Anaconda.Modules.Runtime",
   "org.fedoraproject.Anaconda.Modules.Security",
   "org.fedoraproject.Anaconda.Modules.Services",
-  "org.fedoraproject.Anaconda.Modules.Users",
+  "org.fedoraproject.Anaconda.Modules.Storage",
   "org.fedoraproject.Anaconda.Modules.Timezone",
+  "org.fedoraproject.Anaconda.Modules.Users",
 ]
 
 disable = ["org.fedoraproject.Anaconda.Modules.Subscription"]

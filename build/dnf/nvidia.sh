@@ -1,6 +1,8 @@
 #!/bin/bash
 set -Eeuxo pipefail
 
+{ export PS4='+( ${BASH_SOURCE}:${LINENO} ): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'; } 2>/dev/null
+
 if [[ -z "${FEDORA_VERSION:-}" ]]; then
     echo "FEDORA_VERSION environment variable is not set"
     exit 1

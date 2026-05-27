@@ -1,6 +1,8 @@
 #!/bin/bash
 set -Eeuxo pipefail
 
+{ export PS4='+( ${BASH_SOURCE}:${LINENO} ): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'; } 2>/dev/null
+
 # shellcheck disable=SC2016
 declare -A postfix_config=(
     [smtpd_relay_restrictions]="permit_mynetworks permit_sasl_authenticated defer_unauth_destination"

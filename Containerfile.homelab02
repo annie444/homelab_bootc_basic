@@ -7,24 +7,16 @@ ARG FEDORA_VERSION=44
 # DNF5 configuration
 COPY root/etc/dnf/dnf.conf /etc/dnf/dnf.conf
 
-# Install necessary tools for the build process
-COPY build/dnf/rpm-fusion.sh /tmp/rpm-fusion.sh
-COPY build/dnf/terra.sh /tmp/terra.sh
-COPY build/install-packages.sh /tmp/install-packages.sh
-COPY build/base-pkgs.txt /tmp/base-pkgs.txt
-COPY build/fangfrisch.sh /tmp/fangfrisch.sh
-
 # Install RPM Fusion repositories, NVIDIA Container Toolkit, and necessary packages for the image.
-RUN /tmp/rpm-fusion.sh && \
-    /tmp/terra.sh && \
-    /tmp/install-packages.sh && \
-    /tmp/fangfrisch.sh && \
+RUN --mount=type=bind,source=./.,target=/src \
+    /src/build/dnf/rpm-fusion.sh && \
+    /src/build/dnf/terra.sh && \
+    /src/build/install-packages.sh && \
+    /src/build/fangfrisch.sh && \
     dnf5 clean all && \
     rm -rf /var/cache/dnf/* && \
     rm -rf /var/cache/libdnf5/* && \
-    rm -rf /var/log/dnf* && \
-    rm -rf /tmp/*.sh && \
-    rm -rf /tmp/*.txt
+    rm -rf /var/log/dnf*
 
 # Enable composefs+verity for the immutable image and make /etc transient by default.
 COPY root/usr/lib/ostree/prepare-root.conf /usr/lib/ostree/prepare-root.conf
@@ -98,29 +90,14 @@ COPY root/etc/security/pwquality.conf /etc/security/pwquality.conf
 COPY root/etc/security/limits.d/50-hard-core.conf /etc/security/limits.d/50-hard-core.conf
 COPY root/etc/issue /etc/issue
 COPY root/etc/issue.net /etc/issue.net
-COPY build/pam.sh /tmp/pam.sh
-RUN /tmp/pam.sh && \
-    rm -f /tmp/pam.sh
 
-# Postfix configuration
-COPY build/postfix.sh /tmp/postfix.sh
-RUN /tmp/postfix.sh && \
-    rm -f /tmp/postfix.sh
-
-# Firewalld configuration
-COPY build/firewalld.sh /tmp/firewalld.sh
-RUN /tmp/firewalld.sh && \
-    rm -f /tmp/firewalld.sh
-
-# Enable and start the necessary services
-COPY build/services.sh /tmp/services.sh
-RUN /tmp/services.sh && \
-    rm -f /tmp/services.sh
-
-# Clean up the unnecessary files and caches to reduce the image size
-COPY build/cleanup.sh /cleanup.sh
-RUN /cleanup.sh && \
-    rm -f /cleanup.sh
+# Configuration scripts
+RUN --mount=type=bind,source=./.,target=/src \
+    /src/build/pam.sh && \
+    /src/build/postfix.sh && \
+    /src/build/firewalld.sh && \
+    /src/build/services.sh && \
+    /src/build/cleanup.sh
 
 # Lint the final container
 RUN bootc container lint --no-truncate

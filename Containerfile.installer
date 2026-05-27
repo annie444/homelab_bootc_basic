@@ -11,18 +11,14 @@ COPY root/etc/dnf/dnf.conf /etc/dnf/dnf.conf
 # Install the Anaconda installer environment. This image is *not* the OS that
 # gets installed -- it is the live environment that image-builder boots to run
 # the install. The payload OS is passed via --bootc-installer-payload-ref.
-COPY build/installer.sh /tmp/installer.sh
-RUN /tmp/installer.sh $TARGET_IMAGE && \
+RUN --mount=type=bind,source=./.,target=/src \
+    /src/build/installer.sh $TARGET_IMAGE && \
     dnf5 clean all && \
     rm -rf /var/cache/dnf/* && \
     rm -rf /var/cache/libdnf5/* && \
     rm -rf /var/log/dnf* && \
-    rm -rf /tmp/*.sh
-
-# Clean up the unnecessary files and caches to reduce the image size
-COPY build/cleanup.sh /cleanup.sh
-RUN /cleanup.sh && \
-    rm -f /cleanup.sh
+    rm -rf /tmp/*.sh && \
+    /src/build/cleanup.sh
 
 # Lint the final container
 RUN bootc container lint --no-truncate

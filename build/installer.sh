@@ -1,6 +1,8 @@
 #!/bin/bash
 set -Eeuxo pipefail
 
+{ export PS4='+( ${BASH_SOURCE}:${LINENO} ): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'; } 2>/dev/null
+
 if ! [ $# -eq 1 ]; then
     echo "Usage: $0 <target-image-ref>" >&2
     exit 1
@@ -83,11 +85,19 @@ mkdir -p /usr/lib/image-builder/bootc
 cat >/usr/lib/image-builder/bootc/iso.yaml <<EOT
 label: "Fedora-bootc-Installer"
 grub2:
+  default: 0
+  timeout: 10
   entries:
     - name: "Install Fedora (bootc)"
-      linux: "/images/pxeboot/vmlinuz inst.stage2=hd:LABEL=Fedora-bootc-Installer console=tty0 console=ttyS0,115200n8 console=tty1 inst.text inst.graphical selinux=0 rhgb quiet"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=Fedora-bootc-Installer enforcing=0 rd.live.image"
+      initrd: "/images/pxeboot/initrd.img"
+    - name: "My Custom Image Live (Basic Graphics)"
+      linux: "/images/pxeboot/vmlinuz quiet rhgb root=live:CDLABEL=Fedora-bootc-Installer enforcing=0 rd.live.image nomodeset"
       initrd: "/images/pxeboot/initrd.img"
 EOT
+
+mkdir -p /usr/lib/bootc-image-builder
+cp /usr/lib/image-builder/bootc/iso.yaml /usr/lib/bootc-image-builder/iso.yaml
 
 # some configuration for anaconda
 
@@ -104,10 +114,7 @@ passwd -d root
 
 mv /usr/share/anaconda/list-harddrives-stub /usr/bin/list-harddrives
 mv /etc/yum.repos.d /etc/anaconda.repos.d
-if [ -e /etc/systemd/system/default.target ]; then
-    rm -f /etc/systemd/system/default.target
-fi
-ln -s /lib/systemd/system/anaconda.target /etc/systemd/system/default.target
+systemctl set-default anaconda.target
 rm -v /usr/lib/systemd/system-generators/systemd-gpt-auto-generator
 
 if [ -e /usr/lib/systemd/system/autovt@.service ]; then
@@ -138,4 +145,26 @@ cat >/etc/systemd/user/pipewire.socket.d/allowroot.conf <<EOT
 [Unit]
 ConditionUser=
 EOT
+
+# / in a booted live ISO is an overlayfs with upperdir pointed somewhere under /run
+# This means that /var/tmp is also technically under /run.
+# /run is of course a tmpfs, but set with quite a small size.
+# ostree needs quite a lot of space on /var/tmp for temporary files so /run is not enough.
+# Mount a larger tmpfs to /var/tmp at boot time to avoid this issue.
+rm -rf /var/tmp
+mkdir /var/tmp
+cat >/etc/systemd/system/var-tmp.mount <<'EOF'
+[Unit]
+Description=Larger tmpfs for /var/tmp on live system
+
+[Mount]
+What=tmpfs
+Where=/var/tmp
+Type=tmpfs
+Options=size=50%%,nr_inodes=1m,x-systemd.graceful-option=usrquota
+
+[Install]
+WantedBy=local-fs.target
+EOF
+systemctl enable var-tmp.mount
 # vim: set ft=bash et tw=4 sw=4 sts=4:

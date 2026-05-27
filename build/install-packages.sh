@@ -1,6 +1,8 @@
 #!/bin/bash
 set -Eeuxo pipefail
 
+{ export PS4='+( ${BASH_SOURCE}:${LINENO} ): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'; } 2>/dev/null
+
 arch="$(uname -m)"
 shim_pkg=""
 
@@ -12,7 +14,7 @@ esac
 dnf5 -y distro-sync --allowerasing
 dnf5 -y upgrade --refresh
 
-mapfile -t packages < <(/bin/cat /tmp/*-pkgs.txt)
+mapfile -t packages < <(/bin/cat /src/build/*-pkgs.txt)
 
 dnf5 install -y \
     "${shim_pkg:+$shim_pkg}" \

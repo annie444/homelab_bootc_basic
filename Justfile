@@ -363,6 +363,7 @@ build $target_image $install_target='' $tag=default_tag $registry=image_registry
 
     just _podman_cmd build \
         "${build_args[@]}" \
+        --security-opt label=type:unconfined_t \
         --arch="${target_arch}" \
         --created-annotation \
         --format=oci \
