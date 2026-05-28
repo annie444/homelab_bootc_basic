@@ -20,8 +20,8 @@ fi
 # --bootc-installer-payload-ref, so this image stays minimal.
 
 arch="$(uname -m)"
-grub_cdboot=""
 shim_pkg=""
+grub_cdboot=""
 
 # The grub2.iso osbuild stage builds the EFI boot tree by copying the vendor
 # shim (e.g. /boot/efi/EFI/fedora/shimx64.efi) and the CD-boot grub from this
@@ -37,26 +37,13 @@ aarch64)
     ;;
 esac
 
-dnf5 -y distro-sync --allowerasing
-dnf5 -y upgrade --refresh
-
 dnf5 install -y \
-    "${grub_cdboot:+$grub_cdboot}" \
     "${shim_pkg:+$shim_pkg}" \
-    anaconda \
-    anaconda-install-img-deps \
-    anaconda-dracut \
-    dracut-config-generic \
-    dracut-network \
     net-tools \
     plymouth \
     default-fonts-core-sans \
     default-fonts-other-sans \
-    google-noto-sans-cjk-fonts
-
-# these are necessary build tools, if you have a separate build container
-# in `--bootc-build-ref` then these can go there
-dnf install -qy \
+    google-noto-sans-cjk-fonts \
     xorrisofs \
     squashfs-tools
 
@@ -69,17 +56,207 @@ if [[ -n "${shim_pkg}" ]]; then
     dnf5 reinstall -y "${shim_pkg}"
 fi
 
+# Create the directory that /root is symlinked to
+mkdir -p "$(realpath /root)"
+
+podman pull "$target_image"
+
+mkdir -p /etc/anaconda/conf.d/
+cat >/etc/anaconda/conf.d/anaconda.conf <<EOF
+[Payload]
+flatpak_remote = flathub https://dl.flathub.org/repo/
+EOF
+
+mkdir -p /etc/anaconda/profile.d/
+cat >/etc/anaconda/profile.d/homelabos.conf <<EOF
+[Profile]
+profile_id = homelabos
+
+[Profile Detection]
+os_id = fedora
+variant_id = homelabos
+
+[Network]
+default_on_boot = FIRST_WIRED_WITH_LINK
+
+[Bootloader]
+efi_dir = fedora
+menu_auto_hide = True
+
+[Storage]
+file_system_type = xfs
+default_scheme = plain
+default_partitioning =
+    /     (min 1 GiB, max 70 GiB)
+    /home (min 500 MiB, free 50 GiB)
+    /var
+
+[Localization]
+use_geolocation = False
+
+[User Interface]
+hidden_webui_pages =
+    network
+custom_stylesheet = /usr/share/anaconda/pixmaps/server/fedora-server.css
+EOF
+
+mv /usr/lib/os-release /usr/lib/os-release.bak
+CURRENT_RELEASE="$(cat /usr/lib/os-release.bak)"
+cat >/etc/os-release <<EOT
+${CURRENT_RELEASE}
+VARIANT="HomelabOS"
+VARIANT_ID=homelabos
+EOT
+
+# Swap kernel with vanilla and rebuild initramfs.
+#
+# This is done because we want the initramfs to use a signed
+# kernel for secureboot.
+kernel_pkgs=(
+    kernel
+    kernel-core
+    kernel-devel
+    kernel-devel-matched
+    kernel-modules
+    kernel-modules-core
+    kernel-modules-extra
+)
+dnf5 -y versionlock delete "${kernel_pkgs[@]}"
+dnf5 --setopt=protect_running_kernel=False -y remove "${kernel_pkgs[@]}"
+(cd /usr/lib/modules && rm -rf -- ./*)
+dnf5 -y --repo fedora,updates --setopt=tsflags=noscripts install kernel kernel-core
+kernel=$(find /usr/lib/modules -maxdepth 1 -type d -printf '%P\n' | grep .)
+depmod "$kernel"
+
+dnf5 clean all -yq
+
+# Install dracut-live and regenerate the initramfs
+dnf5 install -y dracut-live
+kernel=$(kernel-install list --json pretty | jq -r '.[] | select(.has_kernel == true) | .version')
+DRACUT_NO_XATTR=1 dracut -v --force --zstd --reproducible --no-hostonly \
+    --add "dmsquash-live dmsquash-live-autooverlay" \
+    "/usr/lib/modules/${kernel}/initramfs.img" "${kernel}"
+
 mkdir -p /boot/efi/EFI
 for efidir in /usr/lib/efi/*/*/EFI; do
     [[ -d "${efidir}" ]] && cp -ra "${efidir}/." /boot/efi/EFI/
 done
 
-dnf5 clean all
-
 mkdir -p /var/mnt
 
-# some configuration for our ISO
+# Remove all versionlocks, in order to avoid dependency issues
+dnf5 -qy versionlock clear
 
+# Install Anaconda
+dnf5 install -qy --enable-repo=fedora-cisco-openh264 --allowerasing anaconda-live libblockdev-{btrfs,crypto,dm,fs,lvm,mdraid,nvme,part,smart,smartmontools}
+
+mkdir -p /var/lib/rpm-state # Needed for Anaconda Web UI
+
+# Utilities for displaying a dialog prompting users to review secure boot documentation
+dnf5 install -qy --setopt=install_weak_deps=0 qrencode yad
+
+# Default Kickstart
+cat >>/usr/share/anaconda/interactive-defaults.ks <<EOF
+
+# Create log directory
+%pre
+mkdir -p /tmp/anacoda_custom_logs
+%end
+
+# Check if there is a bitlocker partition and ask the user to disable it
+%pre --erroronfail --log=/tmp/anacoda_custom_logs/detect_bitlocker.log
+DOCS_QR=/tmp/detect_bitlocker_qr.png
+IS_BITLOCKER=\$(lsblk -o FSTYPE --json | jq '.blockdevices | map(select(.fstype == "BitLocker")) | . != []')
+{ WARNING_MSG="\$(</dev/stdin)"; } << 'WARNINGEOF'
+<span size="x-large">Windows Bitlocker partition detected</span>
+
+It might interrupt the installation process.
+In such case, please, do <b>one</b> of the following:
+    a) Disconnect its storage drive.
+    b) Disable Bitlocker in Windows.
+    c) Delete it in GNOME Disks.
+
+Do you wish to continue?
+WARNINGEOF
+
+if [[ \$IS_BITLOCKER =~ true ]]; then
+    qrencode -o \$DOCS_QR "https://www.wikihow.com/Turn-Off-BitLocker"
+    _EXITLOCK=1
+    _RETCODE=0
+    while [[ \$_EXITLOCK -ne 0 ]]; do
+        run0 --user=liveuser yad \
+            --on-top \
+            --timeout=10 \
+            --image=\$DOCS_QR \
+            --text="\$WARNING_MSG" \
+            --button="Yes, I'm aware, continue":0 --button="Cancel installation":10
+        _RETCODE=\$?
+        case \$_RETCODE in
+            0) _EXITLOCK=0; ;;
+            10) _EXITLOCK=0; pkill liveinst; pkill firefox; exit 0 ;;
+        esac
+    done
+fi
+%end
+
+# Remove the efi dir, must match efi_dir from the profile config
+%pre-install --erroronfail
+rm -rf /mnt/sysroot/boot/efi/EFI/fedora
+%end
+
+# Relabel the boot partition for the
+%pre-install --erroronfail --log=/tmp/anacoda_custom_logs/repartitioning.log
+set -x
+xboot_dev=\$(findmnt -o SOURCE --nofsroot --noheadings -f --target /mnt/sysroot/boot)
+if [[ -z \$xboot_dev ]]; then
+  echo "ERROR: xboot_dev not found"
+  exit 1
+fi
+e2label "\$xboot_dev" "xboot"
+%end
+
+# Open a dialog with the installation logs
+%onerror
+run0 --user=liveuser yad \
+    --timeout=0 \
+    --text-info \
+    --no-buttons \
+    --width=600 \
+    --height=400 \
+    --text="An error occurred during installation. Please report this issue to the developers." \
+    < /tmp/anaconda.log
+%end
+
+ostreecontainer --url=${target_image} --transport=containers-storage --no-signature-verification
+%include /usr/share/anaconda/post-scripts/install-configure-upgrade.ks
+
+EOF
+
+# Signed Images
+cat <<EOF >>/usr/share/anaconda/post-scripts/install-configure-upgrade.ks
+%post --erroronfail --log=/tmp/anacoda_custom_logs/bootc-switch.log
+bootc switch --mutate-in-place --enforce-container-sigpolicy --transport registry ${target_image}
+%end
+EOF
+
+# Don't check for verified image
+rm -vf /etc/profile.d/verify_motd.sh
+
+# Install Gparted
+dnf5 -yq install gparted
+
+# image-builder needs gcdx64.efi
+dnf5 install -y "$grub_cdboot"
+
+# image-builder expects the EFI directory to be in /boot/efi
+mkdir -p /boot/efi
+cp -av /usr/lib/efi/*/*/EFI /boot/efi/
+
+# Set the timezone to UTC
+rm -f /etc/localtime
+systemd-firstboot --timezone UTC
+
+# some configuration for our ISO
 mkdir -p /usr/lib/image-builder/bootc
 
 cat >/usr/lib/image-builder/bootc/iso.yaml <<EOT
@@ -98,53 +275,6 @@ EOT
 
 mkdir -p /usr/lib/bootc-image-builder
 cp /usr/lib/image-builder/bootc/iso.yaml /usr/lib/bootc-image-builder/iso.yaml
-
-# some configuration for anaconda
-
-cat >/usr/share/anaconda/interactive-defaults.ks <<EOT
-bootc --source-imgref registry:${target_image} --target-imgref ${target_image}
-EOT
-
-# these things are normally performed by `lorax` to make `anaconda` work; this is the
-# bare minimum to get things to work
-
-echo "install:x:0:0:root:/root:/usr/libexec/anaconda/run-anaconda" >>/etc/passwd
-echo "install::14438:0:99999:7:::" >>/etc/shadow
-passwd -d root
-
-mv /usr/share/anaconda/list-harddrives-stub /usr/bin/list-harddrives
-mv /etc/yum.repos.d /etc/anaconda.repos.d
-systemctl set-default anaconda.target
-rm -v /usr/lib/systemd/system-generators/systemd-gpt-auto-generator
-
-if [ -e /usr/lib/systemd/system/autovt@.service ]; then
-    rm -f /usr/lib/systemd/system/autovt@.service
-fi
-ln -s /usr/lib/systemd/system/anaconda-shell@.service /usr/lib/systemd/system/autovt@.service
-
-mkdir /usr/lib/systemd/logind.conf.d
-cat >/usr/lib/systemd/logind.conf.d/anaconda-shell.conf <<EOT
-[Login]
-ReserveVT=2
-EOT
-
-mkdir "$(realpath /root)"
-kernel=$(kernel-install list --json pretty | jq -r '.[] | select(.has_kernel == true) | .version')
-DRACUT_NO_XATTR=1 dracut --force -v --zstd --reproducible --no-hostonly \
-    --add "anaconda" \
-    "/usr/lib/modules/${kernel}/initramfs.img" "${kernel}"
-
-mkdir /etc/systemd/user/pipewire.service.d/
-cat >/etc/systemd/user/pipewire.service.d/allowroot.conf <<EOT
-[Unit]
-ConditionUser=
-EOT
-
-mkdir /etc/systemd/user/pipewire.socket.d/
-cat >/etc/systemd/user/pipewire.socket.d/allowroot.conf <<EOT
-[Unit]
-ConditionUser=
-EOT
 
 # / in a booted live ISO is an overlayfs with upperdir pointed somewhere under /run
 # This means that /var/tmp is also technically under /run.

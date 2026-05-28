@@ -13,6 +13,7 @@ esac
 
 dnf5 -y distro-sync --allowerasing
 dnf5 -y upgrade --refresh
+dnf5 -y swap grubby sdubby
 
 mapfile -t packages < <(/bin/cat /src/build/*-pkgs.txt)
 
