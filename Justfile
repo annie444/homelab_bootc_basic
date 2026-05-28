@@ -376,6 +376,24 @@ build $target_image $install_target='' $tag=default_tag $registry=image_registry
         "${tags[@]}" \
         .
 
+# Rechunk Image but cooler
+[group('Image')]
+chunkah $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
+    #!/usr/bin/env bash
+    {{ debug }}
+
+    image_name="${registry}/${ns}/${target_image}:${tag}"
+    export CHUNKAH_CONFIG_STR=$(just _podman_cmd inspect "${image_name}")
+    podman run --rm --mount=type=image,src="${image_name}",target=/chunkah \
+        -e RUST_LOG=debug \
+        -e CHUNKAH_CONFIG_STR quay.io/coreos/chunkah:dev \
+        build \
+        --compressed \
+        --max-layers 128 \
+        --prune /sysroot/ \
+        --label ostree.commit- --label ostree.final-diffid- \
+        --tag "${image_name}" | podman load
+
 [group('Utility')]
 [private]
 bootc $target_image $tag=default_tag $registry=image_registry $ns=image_ns *ARGS:
