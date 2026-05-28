@@ -376,6 +376,60 @@ build $target_image $install_target='' $tag=default_tag $registry=image_registry
         "${tags[@]}" \
         .
 
+[group('Utility')]
+[private]
+bootc $target_image $tag=default_tag $registry=image_registry $ns=image_ns *ARGS:
+    #!/usr/bin/env bash
+    {{ debug }} 
+
+    image_name="${registry}/${ns}/${target_image}:${tag}"
+
+    declare -a bootc_options
+    bootc_options+=("-v" "/var/lib/containers:/var/lib/containers" "-v" "/etc/containers:/etc/containers")
+
+    if [[ -d /sys/fs/selinux ]]; then
+      bootc_options+=("-v" "/sys/fs/selinux:/sys/fs/selinux" "--security-opt" "label=type:unconfined_t")
+    fi
+
+    just _podman_cmd run \
+        --rm --privileged --pid=host \
+        -it \
+        "${bootc_options[@]}" \
+        -v /dev:/dev \
+        -v "${BUILD_BASE_DIR:-.}:/data" \
+        "${image_name}" bootc {{ ARGS }}
+
+# Create bootable image
+[group('Utility')]
+disk-image $target_image $tag=default_tag $registry=image_registry $ns=image_ns ghcr="0" $bootc_fs="xfs":
+    #!/usr/bin/env bash
+    {{ debug }} 
+
+    # this is enough for base aurora to make it more likely to run in CI
+    if [[ "{{ ghcr }}" == "1" ]]; then
+      IMG_SIZE=11G
+    else
+      # Do a little more locally so you can rebase
+      IMG_SIZE=30G
+    fi
+
+    BYTES_IMAGE_SIZE=$(numfmt --from=iec ${IMG_SIZE})
+
+    if [ ! -e "${BUILD_BASE_DIR:-.}/bootable.img" ]; then
+      FREE_SPACE=$(findmnt -bno AVAIL -T "${BUILD_BASE_DIR:-.}")
+      if [ "${FREE_SPACE}" -gt "${BYTES_IMAGE_SIZE}" ]; then
+        fallocate -l "${BYTES_IMAGE_SIZE}" "${BUILD_BASE_DIR:-.}/bootable.img"
+      else
+        echo "not enough disk space available"
+        exit 1
+      fi
+    fi
+
+    just bootc "${target_image}" "${tag}" "${registry}" "${ns}" \
+        install to-disk --wipe --filesystem "${bootc_fs}" \
+        --generic-image --bootloader systemd --via-loopback \
+        /data/bootable.img
+
 # Push the image using the specified parameters
 push $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
     #!/usr/bin/env bash
