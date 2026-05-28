@@ -391,7 +391,7 @@ bootc $target_image $tag=default_tag $registry=image_registry $ns=image_ns *ARGS
       bootc_options+=("-v" "/sys/fs/selinux:/sys/fs/selinux" "--security-opt" "label=type:unconfined_t")
     fi
 
-    just _podman_cmd run \
+    just _sudo_podman_cmd run \
         --rm --privileged --pid=host \
         -it \
         "${bootc_options[@]}" \
@@ -401,7 +401,7 @@ bootc $target_image $tag=default_tag $registry=image_registry $ns=image_ns *ARGS
 
 # Create bootable image
 [group('Utility')]
-disk-image $target_image $tag=default_tag $registry=image_registry $ns=image_ns ghcr="0" $bootc_fs="xfs":
+disk-image $target_image $tag=default_tag $registry=image_registry $ns=image_ns ghcr="0" $bootc_fs="xfs": (_rootful_load_image target_image tag registry ns)
     #!/usr/bin/env bash
     {{ debug }} 
 
