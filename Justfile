@@ -428,7 +428,7 @@ disk-image $target_image $tag=default_tag $registry=image_registry $ns=image_ns 
     just bootc "${target_image}" "${tag}" "${registry}" "${ns}" \
         install to-disk --wipe --filesystem "${bootc_fs}" \
         --generic-image --bootloader systemd --via-loopback \
-        /data/bootable.img
+        /data/bootable.img --composefs-backend --allow-missing-verity
 
 # Push the image using the specified parameters
 push $target_image $tag=default_tag $registry=image_registry $ns=image_ns:
