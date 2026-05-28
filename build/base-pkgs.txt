@@ -95,7 +95,7 @@ systemd-oomd-defaults
 systemd-pam
 systemd-sysusers
 systemd-bootchart
-systemd-containe
+systemd-container
 systemd-resolved
 systemd-udev
 systemd-ukify
